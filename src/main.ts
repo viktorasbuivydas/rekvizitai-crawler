@@ -1,7 +1,7 @@
 // Apify SDK - toolkit for building Apify Actors (Read more at https://docs.apify.com/sdk/js/)
 import { Actor } from 'apify';
 // Crawlee - web scraping and browser automation library (Read more at https://crawlee.dev)
-import { CheerioCrawler, Dataset } from 'crawlee';
+import { CheerioCrawler, Dataset, createCheerioRouter } from 'crawlee';
 // this is ESM project, and as such, it requires you to specify extensions in your relative imports
 // read more about this here: https://nodejs.org/docs/latest-v18.x/api/esm.html#mandatory-file-extensions
 // note that we need to use `.js` even when inside TS files
@@ -17,26 +17,34 @@ await Actor.init();
 
 // Structure of input is defined in input_schema.json
 const {
-    startUrls = ['https://rekvizitai.lt'],
+    startUrls = ['https://rekvizitai.vz.lt/imones/'],
     maxRequestsPerCrawl = 100,
 } = await Actor.getInput<Input>() ?? {} as Input;
 
 const proxyConfiguration = await Actor.createProxyConfiguration();
 
+const router = createCheerioRouter();
+router.addDefaultHandler(async ({ request, $, log, enqueueLinks }) => {
+    log.info('hey here');
+
+    // Extract title from the page.
+    const title = $('title').text();
+    log.info(`${title}`, { url: request.loadedUrl });
+
+    // Enqueue pagination links
+    await enqueueLinks({
+        selector: '.breadcrumb.mb-0 strong',
+        baseUrl: 'https://rekvizitai.vz.lt/imomnes/',
+    });
+
+    // Save url and title to Dataset - a table-like storage.
+    await Dataset.pushData({ url: request.loadedUrl, title });
+});
+
 const crawler = new CheerioCrawler({
     proxyConfiguration,
     maxRequestsPerCrawl,
-    requestHandler: async ({ enqueueLinks, request, $, log }) => {
-        log.info('enqueueing new URLs');
-        await enqueueLinks();
-
-        // Extract title from the page.
-        const title = $('title').text();
-        log.info(`${title}`, { url: request.loadedUrl });
-
-        // Save url and title to Dataset - a table-like storage.
-        await Dataset.pushData({ url: request.loadedUrl, title });
-    },
+    requestHandler: router,
 });
 
 await crawler.run(startUrls);
